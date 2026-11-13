@@ -1,0 +1,94 @@
+# Contrato de esquema - Yellow Taxi Trip Records (TLC)
+# version: 2
+# El matching contra el archivo real es case-insensitive (ver src/esquema.py),
+# por eso no hace falta declarar variantes de mayusculas/minusculas del nombre.
+#
+# cbd_congestion_fee existe solo desde 2025 (peaje por congestion de Manhattan).
+# En 2024 se completa con 0.0, no NULL: en 2024 el cargo fue de $0.00 con
+# certeza legal (no es un dato faltante/desconocido), y asi se evita que sumas
+# como fare_amount + cbd_congestion_fee se anulen por propagacion de NULL.
+
+version: "2"
+
+columns:
+  - raw_name: VendorID
+    clean_name: vendor_id
+    type: INTEGER
+    required: true
+  - raw_name: tpep_pickup_datetime
+    clean_name: pickup_datetime
+    type: TIMESTAMP
+    required: true
+  - raw_name: tpep_dropoff_datetime
+    clean_name: dropoff_datetime
+    type: TIMESTAMP
+    required: true
+  - raw_name: passenger_count
+    clean_name: passenger_count
+    type: BIGINT
+    required: true
+  - raw_name: trip_distance
+    clean_name: trip_distance
+    type: DOUBLE
+    required: true
+  - raw_name: RatecodeID
+    clean_name: ratecode_id
+    type: BIGINT
+    required: true
+  - raw_name: store_and_fwd_flag
+    clean_name: store_and_fwd_flag
+    type: VARCHAR
+    required: true
+  - raw_name: PULocationID
+    clean_name: pu_location_id
+    type: INTEGER
+    required: true
+  - raw_name: DOLocationID
+    clean_name: do_location_id
+    type: INTEGER
+    required: true
+  - raw_name: payment_type
+    clean_name: payment_type
+    type: BIGINT
+    required: true
+  - raw_name: fare_amount
+    clean_name: fare_amount
+    type: DOUBLE
+    required: true
+  - raw_name: extra
+    clean_name: extra
+    type: DOUBLE
+    required: true
+  - raw_name: mta_tax
+    clean_name: mta_tax
+    type: DOUBLE
+    required: true
+  - raw_name: tip_amount
+    clean_name: tip_amount
+    type: DOUBLE
+    required: true
+  - raw_name: tolls_amount
+    clean_name: tolls_amount
+    type: DOUBLE
+    required: true
+  - raw_name: improvement_surcharge
+    clean_name: improvement_surcharge
+    type: DOUBLE
+    required: true
+  - raw_name: total_amount
+    clean_name: total_amount
+    type: DOUBLE
+    required: true
+  - raw_name: congestion_surcharge
+    clean_name: congestion_surcharge
+    type: DOUBLE
+    required: true
+  - raw_name: airport_fee
+    clean_name: airport_fee
+    type: DOUBLE
+    required: true
+  - raw_name: cbd_congestion_fee
+    clean_name: cbd_congestion_fee
+    type: DOUBLE
+    required: false
+    default_when_missing: "0.0"
