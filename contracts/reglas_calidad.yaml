@@ -1,0 +1,140 @@
+# Reglas de calidad - Parte 3
+#
+# Cada regla tiene: id, descripcion, severidad, umbral, justificacion y la
+# condicion SQL que la VIOLA (true = la fila no cumple la regla).
+#
+#   severidad: rechazo     -> la fila va a cuarentena (no sigue en el pipeline)
+#              advertencia -> la fila sigue, marcada en la columna quality_flags
+#
+# Columnas que puede usar una condicion: todas las del contrato
+# (contracts/yellow_schema.yaml, ya en snake_case) mas estas, que calcula
+# src/calidad.py antes de evaluar:
+#   source_year, source_month  anio y mes del archivo de origen
+#   duracion_min               minutos entre la subida y la bajada
+#   rn_dup                     1 = primera aparicion de la fila; >1 = copia exacta
+#   pu_existe, do_existe       la zona de origen / destino existe en taxi_zone_lookup
+#
+# OJO con los NULL: en SQL, "NULL > 0" no es true ni false, y la regla no se
+# dispararia. Por eso las condiciones contemplan el IS NULL cuando hace falta.
+#
+# Los numeros de las justificaciones salen de docs/exploracion_2025-03.txt
+# (2025-03 y 2024-03).
+
+reglas:
+  - id: DQ01
+    descripcion: Fecha de subida fuera del mes del archivo
+    severidad: rechazo
+    umbral: anio y mes de pickup_datetime iguales a los del archivo
+    justificacion: >
+      Un viaje de otro mes contamina la comparacion mes contra mes. Son pocos
+      (33 en 2025-03, 23 en 2024-03): casi todos del mes anterior o siguiente,
+      y algunos de 2002, 2007 y 2009 (reloj del taximetro mal configurado).
+    condicion: >
+      pickup_datetime IS NULL
+      OR year(pickup_datetime) <> source_year
+      OR month(pickup_datetime) <> source_month
+
+  - id: DQ02
+    descripcion: Bajada anterior o igual a la subida
+    severidad: rechazo
+    umbral: dropoff_datetime > pickup_datetime
+    justificacion: >
+      Un viaje de duracion cero o negativa es imposible y rompe la duracion y
+      la velocidad (division por cero). 22.280 filas en 2025-03 (0,54 %);
+      22.199 de ellas tienen subida y bajada exactamente iguales.
+    condicion: >
+      dropoff_datetime IS NULL OR dropoff_datetime <= pickup_datetime
+
+  - id: DQ03
+    descripcion: Distancia menor o igual a 0, o mayor a 100 millas
+    severidad: rechazo
+    umbral: 0 < trip_distance <= 100
+    justificacion: >
+      Distancia 0 no permite calcular velocidad ni tarifa por milla (2,5 % de
+      las filas). Maximo de 100 millas: el 99,99 % de las filas mide menos de
+      58 millas (2025-03) y 56 (2024-03); por encima de 100 hay 214 filas, con
+      valores absurdos como 320.136 millas.
+    condicion: >
+      trip_distance IS NULL OR trip_distance <= 0 OR trip_distance > 100
+
+  - id: DQ04
+    descripcion: Importe total negativo
+    severidad: rechazo
+    umbral: total_amount >= 0
+    justificacion: >
+      Son anulaciones o contracargos, no viajes cobrados (1,66 % en 2025-03).
+      Todos los viajes con cbd_congestion_fee negativo (-0,75) caen aca.
+    condicion: >
+      total_amount IS NULL OR total_amount < 0
+
+  - id: DQ05
+    descripcion: Cantidad de pasajeros nula o igual a 0
+    severidad: advertencia
+    umbral: passenger_count >= 1
+    justificacion: >
+      Es el 22,1 % de 2025-03 (916.663 filas nulas) y el 11,9 % de 2024-03.
+      Las nulas tienen todas payment_type = 0 y tambien vacios ratecode_id,
+      store_and_fwd_flag, congestion_surcharge y airport_fee: es un tipo de
+      viaje sin datos del taximetro, no una fila rota. Rechazarlas borraria
+      1 de cada 5 viajes de 2025, con distancia, horario e importe validos.
+    condicion: >
+      passenger_count IS NULL OR passenger_count <= 0
+
+  - id: DQ06
+    descripcion: Zona de origen o de destino inexistente en la tabla de zonas
+    severidad: rechazo
+    umbral: pu_location_id y do_location_id presentes en taxi_zone_lookup
+    justificacion: >
+      Sin zona no se puede enriquecer con barrio ni armar dim_zone (integridad
+      referencial). En 2025-03 y 2024-03 no aparece ninguna, pero la regla
+      protege los meses futuros.
+    condicion: >
+      NOT pu_existe OR NOT do_existe
+
+  - id: DQ07
+    descripcion: Fila duplicada exacta
+    severidad: rechazo
+    umbral: igualdad en todas las columnas del contrato, dentro del mismo archivo
+    justificacion: >
+      Una copia infla viajes e ingresos. Se conserva la primera aparicion y
+      las copias van a cuarentena. En 2025-03 y 2024-03 no hay ninguna.
+    condicion: >
+      rn_dup > 1
+
+  - id: DQ08
+    descripcion: "Regla propia: velocidad imposible (> 85 mph) o viaje de mas de 12 horas"
+    severidad: rechazo
+    umbral: velocidad media <= 85 mph y duracion <= 720 minutos
+    justificacion: >
+      Descubierta explorando: el 99,99 % de los viajes dura menos de 24 h,
+      pero hay maximos de 6.275 minutos (4 dias) y velocidades de miles de mph
+      (saltos de GPS o taximetros que no se cerraron). Afecta 1.214 filas por
+      duracion y 1.030 por velocidad en 2025-03. 85 mph supera el limite de
+      velocidad de cualquier autopista de NYC.
+    condicion: >
+      duracion_min > 720
+      OR (duracion_min > 0 AND trip_distance / (duracion_min / 60.0) > 85)
+
+  - id: DQ09
+    descripcion: "Regla propia: tarifa negativa en un viaje con importe total positivo"
+    severidad: advertencia
+    umbral: fare_amount >= 0 cuando total_amount >= 0
+    justificacion: >
+      Descubierta explorando: 140.446 filas en 2025-03 (3,4 %) y 14.295 en
+      2024-03 tienen fare_amount negativo pero total_amount positivo, y son
+      todas payment_type = 0. El viaje existe y cobro, pero su tarifa no sirve
+      para promediar: se marca para poder excluirla en la tarifa media y en la
+      propina como porcentaje de la tarifa.
+    condicion: >
+      fare_amount < 0 AND total_amount >= 0
+
+  - id: DQ10
+    descripcion: Zona desconocida (264 Unknown o 265 Outside of NYC)
+    severidad: advertencia
+    umbral: pu_location_id y do_location_id distintos de 264 y 265
+    justificacion: >
+      Las zonas existen en la tabla, asi que no violan DQ06, pero no tienen un
+      barrio real. Son el 0,7 % (2025-03) y 1 % (2024-03): se conservan y se
+      marcan para que el analisis por zona pueda dejarlas afuera.
+    condicion: >
+      pu_location_id IN (264, 265) OR do_location_id IN (264, 265)
