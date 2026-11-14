@@ -1,0 +1,9 @@
+version: 2
+
+sources:
+  - name: curado
+    description: "Capa curada cargada por src/carga_postgres.py"
+    schema: curado
+    tables:
+      - name: viajes
+      - name: zonas

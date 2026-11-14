@@ -1,0 +1,23 @@
+select
+    source_period as periodo,
+    source_year as anio,
+    source_month as mes,
+    pickup_datetime,
+    dropoff_datetime,
+    pickup_date,
+    pickup_hour,
+    pickup_dia_semana,
+    pu_location_id,
+    do_location_id,
+    payment_type,
+    passenger_count,
+    trip_distance,
+    duracion_minutos,
+    velocidad_mph,
+    fare_amount,
+    tip_amount,
+    propina_pct,
+    total_amount,
+    cbd_congestion_fee,
+    quality_flags
+from {{ source('curado', 'viajes') }}
