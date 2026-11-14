@@ -7,4 +7,6 @@ __pycache__/
 *.duckdb.wal
 dbt/target/
 dbt/logs/
+logs/
+docker-compose.override.yml
 RESULTADOS.md
