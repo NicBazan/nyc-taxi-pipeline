@@ -6,4 +6,7 @@ sources:
     schema: curado
     tables:
       - name: viajes
+        meta:
+          dagster:
+            asset_key: ["curado_postgres"]
       - name: zonas

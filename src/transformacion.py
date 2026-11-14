@@ -1,7 +1,22 @@
 import argparse
 import shutil
 
+import duckdb
+
 from config import CURATED_DIR, get_db_connection, get_target_months, log_memory
+
+
+def contar_particiones(curated_dir=None) -> dict:
+    """{'year=2025/month=03': filas, ...}: sirve para mostrar el antes y despues."""
+    curated_dir = curated_dir or CURATED_DIR
+    conteos = {}
+    con = duckdb.connect()  # base en memoria, solo para contar
+    for archivo in sorted(curated_dir.glob("yellow/year=*/month=*/*.parquet")):
+        filas = con.execute(f"SELECT COUNT(*) FROM read_parquet('{archivo.as_posix()}')").fetchone()[0]
+        conteos[f"{archivo.parent.parent.name}/{archivo.parent.name}"] = filas
+    con.close()
+    return conteos
+
 
 def transformar(con, target_months, curated_dir=None) -> None:
     curated_dir = curated_dir or CURATED_DIR
@@ -45,9 +60,11 @@ def main():
     parser.add_argument("--mes", required=True)
     args = parser.parse_args()
 
+    print(f"[TRANSFORMACION] Particiones ANTES: {contar_particiones()}")
     con = get_db_connection()
     transformar(con, get_target_months(args.mes))
     con.close()
+    print(f"[TRANSFORMACION] Particiones DESPUES: {contar_particiones()}")
     log_memory("FIN TRANSFORMACION")
 
 
